@@ -39,6 +39,9 @@ class PusherWebSocket:
             case "App\\Events\\StreamerIsLive":
                 livestream = PartialLivestream(data=data["livestream"], http=self.http)
                 self.http.client.dispatch("livestream_start", livestream)
+            case "App\\Events\\StopStreamBroadcast":
+                livestream = PartialLivestreamStop(data=data["livestream"], http=self.http)
+                self.http.client.dispatch("livestream_stop", livestream)
             # case "App\\Events\\FollowersUpdated":
             #     user = self.http.client._watched_users[data["channel_id"]]
             #     if data["followed"] is True:

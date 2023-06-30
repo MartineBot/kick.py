@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .types.ws import PartialLivestreamPayload
     from .users import User
 
-__all__ = ("Livestream", "PartialLivestream")
+__all__ = ("Livestream", "PartialLivestream", "PartialLivestreamStop")
 
 
 class PartialLivestream:
@@ -46,6 +46,32 @@ class PartialLivestream:
     @cached_property
     def created_at(self) -> datetime:
         return datetime.fromisoformat(self._data["created_at"])
+
+    @property
+    def streamer(self) -> User | None:
+        return self.http.client._watched_users.get(self.channel_id)
+
+
+class PartialLivestreamStop:
+    """
+    A dataclass which represents a partial livestream stop on kick.
+
+    Attributes
+    -----------
+    id: int
+        The livestream's id
+    channel_id: int
+        The livestream's channel id
+    streamer: `User` | None
+        The livestream's streaner
+    """
+
+    def __init__(self, *, data: PartialLivestreamPayload, http: HTTPClient) -> None:
+        self._data = data
+        self.http = http
+
+        self.id: int = data["id"]
+        self.channel_id: int = data["channel"]["id"]
 
     @property
     def streamer(self) -> User | None:

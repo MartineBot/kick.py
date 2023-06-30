@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from aiohttp import ClientWebSocketResponse as WebSocketResponse
 
-from .livestream import PartialLivestream
+from .livestream import PartialLivestream, PartialLivestreamStop
 from .message import Message
 
 if TYPE_CHECKING:
@@ -23,6 +23,9 @@ class PusherWebSocket:
 
     async def poll_event(self) -> None:
         raw_msg = await self.ws.receive()
+        if raw_msg.data is None:
+            return
+
         raw_data = raw_msg.json()
         data = json.loads(raw_data["data"])
 
@@ -34,18 +37,18 @@ class PusherWebSocket:
                 msg = Message(data=data, http=self.http)
                 self.http.client.dispatch("message", msg)
             case "App\\Events\\StreamerIsLive":
-                livestream = PartialLivestream(data=data, http=self.http)
+                livestream = PartialLivestream(data=data["livestream"], http=self.http)
                 self.http.client.dispatch("livestream_start", livestream)
-            case "App\\Events\\FollowersUpdated":
-                user = self.http.client._watched_users[data["channel_id"]]
-                if data["followed"] is True:
-                    event = "follow"
-                    user._data["followers_count"] += 1
-                else:
-                    event = "unfollow"
-                    user._data["followers_count"] -= 1
+            # case "App\\Events\\FollowersUpdated":
+            #     user = self.http.client._watched_users[data["channel_id"]]
+            #     if data["followed"] is True:
+            #         event = "follow"
+            #         user._data["followers_count"] += 1
+            #     else:
+            #         event = "unfollow"
+            #         user._data["followers_count"] -= 1
 
-                self.http.client.dispatch(event, user)
+            #     self.http.client.dispatch(event, user)
 
     async def start(self) -> None:
         while not self.ws.closed:

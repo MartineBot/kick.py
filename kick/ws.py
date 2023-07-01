@@ -84,7 +84,7 @@ class PusherWebSocket:
     async def unwatch_channel(self, channel_id: int) -> None:
         await self.send_json(
             {
-                "event": "pusher:subscribe",
+                "event": "pusher:unsubscribe",
                 "data": {"auth": "", "channel": f"channel.{channel_id}"},
             }
         )

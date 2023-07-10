@@ -1,14 +1,11 @@
 # Kick.py
 
+<a href="https://discord.gg/AGuwPB2XfV"><img src="https://discord.com/api/guilds/1046574190242828349/embed.png" alt="Discord Server Invite"></a>
+
 Kick.py _will_ be an async api wrapper for [kick.com](https://kick.com) once the api is public, and is documented. Though once its there, I will gladly accept help in making this :D
 
-## Table Of Contents
-
-- [API Reference](/api_reference)
-- [Features](#features)
-- [Installation](#installation)
-- [Setting up the bypass script](#setting-up-the-bypass-script)
-- [Basic Example](#basic-example)
+## Documentation
+Our docs are being hosted on https://kickpy.cibere.dev
 
 ## Features
 

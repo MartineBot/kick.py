@@ -201,7 +201,6 @@ class HTTPClient:
             f"wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.6.0&flash=false"
         )
         self.ws = PusherWebSocket(actual_ws, http=self)
-        self.client.dispatch("ready")
         await self.ws.start()
 
     async def request(self, route: Route, **kwargs) -> Any:

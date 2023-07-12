@@ -87,6 +87,9 @@ class PusherWebSocket:
         self.send_json = self.ws.send_json
         self.close = self.ws.close
         await asyncio.sleep(1)
+        
+        for user in self.http.client._watched_users:
+            await self.watch_channel(user)
 
     @property
     def latency(self) -> float:

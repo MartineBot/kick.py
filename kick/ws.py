@@ -8,6 +8,7 @@ from enum import Enum, IntEnum
 from typing import TYPE_CHECKING
 
 from aiohttp import ClientWebSocketResponse as WebSocketResponse
+import aiohttp
 
 from .livestream import PartialLivestream, PartialLivestreamStop
 from .message import Message
@@ -48,12 +49,19 @@ class PusherErrors(IntEnum):
     RECONNECT = 4200
 
 
+class PusherReconnect(Exception):
+    """Exception raised when the Pusher WebSocket requests a reconnect."""
+
+
 class PusherWebSocket:
-    def __init__(self, ws: WebSocketResponse, *, http: HTTPClient):
-        self.ws = ws
-        self.http = http
-        self.send_json = ws.send_json
-        self.close = ws.close
+    WS_URL = "wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.6.0&flash=false"
+
+    def __init__(self, http: HTTPClient):
+        self.http: HTTPClient = http
+
+        self.ws: WebSocketResponse | None = None
+        self.send_json = None
+        self.close = None
 
         self._socket_id: str = ""
         self._heartbeat_timeout: int = 0
@@ -61,21 +69,58 @@ class PusherWebSocket:
         self._heartbeat_last_sent: datetime | None = None
         self._latency: float = 0.0
 
+    async def start(self) -> None:
+        self.ws = await self.http._session.ws_connect(self.WS_URL)
+        self.send_json = self.ws.send_json
+        self.close = self.ws.close
+
+        while not self.http._session.closed:
+            try:
+                await self.poll_event()
+            except PusherReconnect:
+                await self.reconnect()
+
+    async def reconnect(self) -> None:
+        self._heartbeat_task.cancel()
+        await self.close()
+        self.ws = await self.http._session.ws_connect(self.WS_URL)
+        self.send_json = self.ws.send_json
+        self.close = self.ws.close
+        await asyncio.sleep(1)
+
     @property
     def latency(self) -> float:
         return self._latency
 
     async def heartbeat_loop(self) -> None:
         while True:
+            if self.ws.closed:
+                continue
+
             await self.send_json({"event": PusherOPs.HEARTBEAT.value, "data": {}})
             self._heartbeat_last_sent = datetime.now(UTC)
 
             await asyncio.sleep(self._heartbeat_timeout - 5)
 
+    async def error_handler(self, error: PusherErrors) -> None:
+        match error:
+            case PusherErrors.RECONNECT:
+                LOGGER.warning("Pusher requested a reconnect. Reconnecting...")
+                raise PusherReconnect
+            case _:
+                LOGGER.warning("Unknown Pusher error received: %s", error)
+
     async def poll_event(self) -> None:
         raw_msg = await self.ws.receive()
         if raw_msg.data is None:
             return
+
+        if raw_msg.type in (
+            aiohttp.WSMsgType.CLOSED,
+            aiohttp.WSMsgType.CLOSING,
+            aiohttp.WSMsgType.CLOSE,
+        ):
+            raise PusherReconnect
 
         raw_data = raw_msg.json()
         data = (
@@ -96,6 +141,7 @@ class PusherWebSocket:
             return
 
         match event:
+            # Pusher events
             case PusherEvents.CONNECTED:
                 self._heartbeat_timeout = data["activity_timeout"]
                 self._socket_id = data["socket_id"]
@@ -105,8 +151,10 @@ class PusherWebSocket:
                 self._latency = (datetime.now(UTC) - self._heartbeat_last_sent).total_seconds()
                 LOGGER.debug("Heartbeat received. Latency: %s", self._latency)
             case PusherEvents.ERROR:
-                # TODO: Implement
-                LOGGER.error("Pusher error: %s", data)
+                await self.error_handler(PusherErrors(data["code"]))
+                LOGGER.debug("Pusher error: %s", data)
+
+            # Actual Kick events
             case PusherEvents.CHAT_MESSAGE:
                 msg = Message(data=data, http=self.http)
                 self.http.client.dispatch("message", msg)
@@ -126,10 +174,6 @@ class PusherWebSocket:
             #         user._data["followers_count"] -= 1
 
             #     self.http.client.dispatch(event, user)
-
-    async def start(self) -> None:
-        while not self.ws.closed:
-            await self.poll_event()
 
     async def subscribe_to_chatroom(self, chatroom_id: int) -> None:
         await self.send_json(

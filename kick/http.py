@@ -108,7 +108,7 @@ class Route:
 
 class HTTPClient:
     def __init__(self, client: Client):
-        self.__session: ClientSession = MISSING
+        self._session: ClientSession = MISSING
         self.ws: PusherWebSocket = MISSING
         self.client = client
 
@@ -132,8 +132,8 @@ class HTTPClient:
 
     async def close(self) -> None:
         LOGGER.info("Closing HTTP Client...")
-        if self.__session is not MISSING:
-            await self.__session.close()
+        if self._session is not MISSING:
+            await self._session.close()
         if self.ws is not MISSING:
             await self.ws.close()
 
@@ -186,26 +186,21 @@ class HTTPClient:
 
         self.token = res["token"]
         LOGGER.info("Successfully logged in")
-        self.__regex_token_task = asyncio.create_task(
-            self.regen_token_coro(), name="Regen-Token"
-        )
+        self.__regex_token_task = asyncio.create_task(self.regen_token_coro(), name="Regen-Token")
 
     async def start(self) -> None:
         LOGGER.debug(
             f"Starting HTTP client. Whitelisted: {self.whitelisted}, Bypass Port: {self.bypass_port}"
         )
-        if self.__session is MISSING:
-            self.__session = ClientSession()
+        if self._session is MISSING:
+            self._session = ClientSession()
 
-        actual_ws = await self.__session.ws_connect(
-            f"wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.6.0&flash=false"
-        )
-        self.ws = PusherWebSocket(actual_ws, http=self)
+        self.ws = PusherWebSocket(http=self)
         await self.ws.start()
 
     async def request(self, route: Route, **kwargs) -> Any:
-        if self.__session is MISSING:
-            self.__session = ClientSession()
+        if self._session is MISSING:
+            self._session = ClientSession()
 
         headers = kwargs.pop("headers", {})
         headers["User-Agent"] = self.user_agent
@@ -235,7 +230,7 @@ class HTTPClient:
                 f"Making request to {route.method} {url}. headers: {headers}, params: {kwargs.get('params', None)}, json: {kwargs.get('json', None)}"
             )
             try:
-                res = await self.__session.request(
+                res = await self._session.request(
                     route.method,
                     url
                     if self.whitelisted is True
@@ -248,9 +243,7 @@ class HTTPClient:
                 if self.whitelisted is True:
                     raise InternalKickException("Could Not Connect To Kick") from None
                 else:
-                    raise CloudflareBypassException(
-                        "Could Not Connect To Bypass Script"
-                    ) from None
+                    raise CloudflareBypassException("Could Not Connect To Bypass Script") from None
 
             if res is not None:
                 self.xsrf_token = str(
@@ -306,9 +299,7 @@ class HTTPClient:
 
         raise RuntimeError("Unreachable situation occured in http handling")
 
-    def send_message(
-        self, chatroom: int, content: str
-    ) -> Response[V1MessageSentPayload]:
+    def send_message(self, chatroom: int, content: str) -> Response[V1MessageSentPayload]:
         # We use the V1 api here since I havn't gotten it to work with V2.
         # Unfortunatly V1 only returns a confirmation, and not the message (unlike V2)
 
@@ -320,9 +311,7 @@ class HTTPClient:
 
     def delete_message(self, chatroom: int, message_id: str) -> Response[Any]:
         # Kick keeps 500ing on this, so not sure what to expect from it
-        return self.request(
-            Route("DELETE", f"/chatrooms/{chatroom}/messages/{message_id}")
-        )
+        return self.request(Route("DELETE", f"/chatrooms/{chatroom}/messages/{message_id}"))
 
     def get_user(self, streamer: str) -> Response[UserPayload]:
         return self.request(Route(method="GET", path=f"/channels/{streamer}"))
@@ -347,14 +336,10 @@ class HTTPClient:
     def get_emotes(self, streamer: str) -> Response[EmotesPayload]:
         return self.request(Route.root("GET", f"/emotes/{streamer}"))
 
-    def get_channels_banned_words(
-        self, streamer: str
-    ) -> Response[ChatroomBannedWordsPayload]:
+    def get_channels_banned_words(self, streamer: str) -> Response[ChatroomBannedWordsPayload]:
         return self.request(Route("GET", f"/channels/{streamer}/chatroom/banned-words"))
 
-    def get_channel_gift_leaderboard(
-        self, streamer: str
-    ) -> Response[LeaderboardPayload]:
+    def get_channel_gift_leaderboard(self, streamer: str) -> Response[LeaderboardPayload]:
         return self.request(Route.root("GET", f"/channels/{streamer}/leaderboards"))
 
     def get_channel_bans(self, streamer: str) -> Response[GetBannedUsersPayload]:
@@ -380,9 +365,7 @@ class HTTPClient:
             },
         )
 
-    def ban_chatter(
-        self, streamer: str, chatter: str, reason: str
-    ) -> Response[BanChatterPayload]:
+    def ban_chatter(self, streamer: str, chatter: str, reason: str) -> Response[BanChatterPayload]:
         return self.request(
             Route("POST", f"/channels/{streamer}/bans"),
             json={
@@ -488,10 +471,10 @@ class HTTPClient:
         return self.request(Route.root("GET", "/api/v1/user"))
 
     async def get_asset(self, url: str) -> bytes:
-        if self.__session is MISSING:
-            self.__session = ClientSession()
+        if self._session is MISSING:
+            self._session = ClientSession()
 
-        res = await self.__session.request("GET", url)
+        res = await self._session.request("GET", url)
         match res.status:
             case 200:
                 return await res.read()

@@ -46,6 +46,7 @@ class PusherOPs(Enum):
 class PusherErrors(IntEnum):
     """Enum representing all the errors that can be received from the Pusher WebSocket."""
 
+    UNKNOWN = -1
     RECONNECT = 4200
 
 
@@ -87,7 +88,7 @@ class PusherWebSocket:
         self.send_json = self.ws.send_json
         self.close = self.ws.close
         await asyncio.sleep(1)
-        
+
         for user in self.http.client._watched_users:
             await self.watch_channel(user)
 
@@ -105,13 +106,13 @@ class PusherWebSocket:
 
             await asyncio.sleep(self._heartbeat_timeout - 5)
 
-    async def error_handler(self, error: PusherErrors) -> None:
+    async def error_handler(self, error: PusherErrors, data: dict) -> None:
         match error:
             case PusherErrors.RECONNECT:
                 LOGGER.warning("Pusher requested a reconnect. Reconnecting...")
                 raise PusherReconnect
             case _:
-                LOGGER.warning("Unknown Pusher error received: %s", error)
+                LOGGER.warning("Unknown Pusher error received: %s - %s", error, data)
 
     async def poll_event(self) -> None:
         raw_msg = await self.ws.receive()
@@ -154,7 +155,7 @@ class PusherWebSocket:
                 self._latency = (datetime.now(UTC) - self._heartbeat_last_sent).total_seconds()
                 LOGGER.debug("Heartbeat received. Latency: %s", self._latency)
             case PusherEvents.ERROR:
-                await self.error_handler(PusherErrors(data["code"]))
+                await self.error_handler(PusherErrors(data["code"] or -1), data)
                 LOGGER.debug("Pusher error: %s", data)
 
             # Actual Kick events

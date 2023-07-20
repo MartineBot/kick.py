@@ -28,6 +28,7 @@ class PusherEvents(Enum):
     ERROR = "pusher:error"
     PONG = "pusher:pong"
     SUBSCRIPTION_SUCCEEDED = "pusher_internal:subscription_succeeded"
+    SUBSCRIPTION_ERROR = "pusher_internal:subscription_error"
 
     CHAT_MESSAGE = "App\\Events\\ChatMessageEvent"
     STREAMER_IS_LIVE = "App\\Events\\StreamerIsLive"
@@ -43,8 +44,8 @@ class PusherOPs(Enum):
     UNSUBSCRIBE = "pusher:unsubscribe"
 
 
-class PusherErrors(IntEnum):
-    """Enum representing all the errors that can be received from the Pusher WebSocket."""
+class PusherErrorsCodes(IntEnum):
+    """Enum representing all the errors codes that can be received from the Pusher WebSocket."""
 
     UNKNOWN = -1
     RECONNECT = 4200
@@ -106,9 +107,9 @@ class PusherWebSocket:
 
             await asyncio.sleep(self._heartbeat_timeout - 5)
 
-    async def error_handler(self, error: PusherErrors, data: dict) -> None:
+    async def error_handler(self, error: PusherErrorsCodes, data: dict) -> None:
         match error:
-            case PusherErrors.RECONNECT:
+            case PusherErrorsCodes.RECONNECT:
                 LOGGER.warning("Pusher requested a reconnect. Reconnecting...")
                 raise PusherReconnect
             case _:
@@ -155,7 +156,7 @@ class PusherWebSocket:
                 self._latency = (datetime.now(UTC) - self._heartbeat_last_sent).total_seconds()
                 LOGGER.debug("Heartbeat received. Latency: %s", self._latency)
             case PusherEvents.ERROR:
-                await self.error_handler(PusherErrors(data["code"] or -1), data)
+                await self.error_handler(PusherErrorsCodes(data["code"] or -1), data)
                 LOGGER.debug("Pusher error: %s", data)
 
             # Actual Kick events

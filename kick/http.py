@@ -132,10 +132,10 @@ class HTTPClient:
 
     async def close(self) -> None:
         LOGGER.info("Closing HTTP Client...")
-        if self._session is not MISSING:
-            await self._session.close()
         if self.ws is not MISSING:
             await self.ws.close()
+        if self._session is not MISSING:
+            await self._session.close()
 
     async def login(self, credentials: Credentials) -> None:
         self._credentials = credentials

@@ -8,6 +8,7 @@ from enum import Enum, IntEnum
 from typing import TYPE_CHECKING
 
 import aiohttp
+import yarl
 from aiohttp import ClientWebSocketResponse
 
 from .livestream import PartialLivestream, PartialLivestreamStop
@@ -56,9 +57,12 @@ class PusherReconnect(Exception):
 
 
 class PusherWebSocket:
-    WS_URL = "wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.6.0&flash=false"
+    """Class representing the Pusher WebSocket."""
 
-    def __init__(self, http: HTTPClient):
+    BASE_URL = yarl.URL("wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c")
+    WS_URL = BASE_URL.with_query(protocol=7, client="js", version="7.6.0", flash="false")
+
+    def __init__(self, http: HTTPClient) -> None:
         self.http: HTTPClient = http
 
         self.socket: ClientWebSocketResponse | None = None
@@ -70,15 +74,22 @@ class PusherWebSocket:
         self._worker_task: asyncio.Task | None = None
 
     async def close(self) -> None:
+        self._cancel_tasks()
+        if self.socket is not None:
+            await self.socket.close(code=1000)
+
+    def _cancel_tasks(self) -> None:
         if self._worker_task is not None and not self._worker_task.done():
             self._worker_task.cancel()
         if self._heartbeat_task is not None and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
-        if self.socket is not None:
-            await self.socket.close(code=1000)
 
     async def start(self) -> None:
         self.socket = await self.http._session.ws_connect(self.WS_URL)
+
+        # Poll event for OP CONNECTED
+        await self.poll_event()
+
         self._worker_task = asyncio.create_task(self.worker())
 
     async def worker(self) -> None:
@@ -89,12 +100,8 @@ class PusherWebSocket:
                 await self.reconnect()
 
     async def reconnect(self) -> None:
-        await self.close()
-        self.socket = await self.http._session.ws_connect(self.WS_URL)
-        self._worker_task = asyncio.create_task(self.worker())
-
-        await asyncio.sleep(1)
-
+        self._cancel_tasks()
+        await self.start()
         for user in self.http.client._watched_users:
             await self.watch_channel(user)
 
@@ -103,13 +110,9 @@ class PusherWebSocket:
         return self._latency
 
     async def heartbeat_loop(self) -> None:
-        while True:
-            if self.socket.closed:
-                break
-
-            await self.socket.send_json({"event": PusherOPs.HEARTBEAT.value, "data": {}})
+        while not self.socket.closed:
+            await self.send_json({"event": PusherOPs.HEARTBEAT.value, "data": {}})
             self._heartbeat_last_sent = datetime.now(UTC)
-
             await asyncio.sleep(self._heartbeat_timeout - 5)
 
     async def error_handler(self, error: PusherErrorsCodes, data: dict) -> None:
@@ -186,7 +189,7 @@ class PusherWebSocket:
             #     self.http.client.dispatch(event, user)
 
     async def subscribe_to_chatroom(self, chatroom_id: int) -> None:
-        await self.socket.send_json(
+        await self.send_json(
             {
                 "event": PusherOPs.SUBSCRIBE.value,
                 "data": {"auth": "", "channel": f"chatrooms.{chatroom_id}.v2"},
@@ -194,7 +197,7 @@ class PusherWebSocket:
         )
 
     async def unsubscribe_to_chatroom(self, chatroom_id: int) -> None:
-        await self.socket.send_json(
+        await self.send_json(
             {
                 "event": PusherOPs.UNSUBSCRIBE.value,
                 "data": {"auth": "", "channel": f"chatrooms.{chatroom_id}.v2"},
@@ -202,7 +205,7 @@ class PusherWebSocket:
         )
 
     async def watch_channel(self, channel_id: int) -> None:
-        await self.socket.send_json(
+        await self.send_json(
             {
                 "event": PusherOPs.SUBSCRIBE.value,
                 "data": {"auth": "", "channel": f"channel.{channel_id}"},
@@ -210,9 +213,16 @@ class PusherWebSocket:
         )
 
     async def unwatch_channel(self, channel_id: int) -> None:
-        await self.socket.send_json(
+        await self.send_json(
             {
                 "event": PusherOPs.UNSUBSCRIBE.value,
                 "data": {"auth": "", "channel": f"channel.{channel_id}"},
             }
         )
+
+    async def send_json(self, data: dict) -> None:
+        try:
+            await self.socket.send_json(data)
+        except ConnectionResetError:
+            await self.reconnect()
+            raise PusherReconnect

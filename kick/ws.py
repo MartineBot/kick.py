@@ -93,10 +93,10 @@ class PusherWebSocket:
         self._worker_task = asyncio.create_task(self.worker())
 
     async def worker(self) -> None:
-        while not self.http._session.closed:
+        while not self.socket.closed:
             try:
                 await self.poll_event()
-            except PusherReconnect:
+            except (PusherReconnect, asyncio.TimeoutError, aiohttp.ClientError, OSError):
                 await self.reconnect()
 
     async def reconnect(self) -> None:
@@ -124,18 +124,20 @@ class PusherWebSocket:
                 LOGGER.warning("Unknown Pusher error received: %s - %s", error, data)
 
     async def poll_event(self) -> None:
-        raw_msg = await self.socket.receive()
-        if raw_msg.data is None:
-            return
-
-        if raw_msg.type in (
+        raw_msg = await self.socket.receive(timeout=60)
+        if raw_msg.type is aiohttp.WSMsgType.TEXT:
+            await self.received_message(raw_msg)
+        elif raw_msg.type is aiohttp.WSMsgType.BINARY:
+            LOGGER.warning("Received unexpected binary data from Pusher: %s", raw_msg)
+        elif raw_msg.type in (
             aiohttp.WSMsgType.CLOSED,
             aiohttp.WSMsgType.CLOSING,
             aiohttp.WSMsgType.CLOSE,
         ):
             raise PusherReconnect
 
-        raw_data = raw_msg.json()
+    async def received_message(self, message: aiohttp.WSMessage) -> None:
+        raw_data = message.json()
         data = (
             json.loads(raw_data["data"])
             if not isinstance(raw_data["data"], dict)

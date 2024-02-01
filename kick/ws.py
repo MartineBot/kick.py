@@ -85,7 +85,9 @@ class PusherWebSocket:
             self._heartbeat_task.cancel()
 
     async def start(self) -> None:
-        self.socket = await self.http._session.ws_connect(self.WS_URL)
+        self.socket = await self.http._session.ws_connect(
+            self.WS_URL, timeout=30, autoclose=False, max_msg_size=0
+        )
 
         # Poll event for OP CONNECTED
         await self.poll_event()

@@ -59,7 +59,7 @@ class PusherReconnect(Exception):
 class PusherWebSocket:
     """Class representing the Pusher WebSocket."""
 
-    BASE_URL = yarl.URL("wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c")
+    BASE_URL = yarl.URL("wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679")
     WS_URL = BASE_URL.with_query(protocol=7, client="js", version="8.4.0-rc2", flash="false")
 
     def __init__(self, http: HTTPClient) -> None:
